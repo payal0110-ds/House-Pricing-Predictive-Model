@@ -1,0 +1,473 @@
+---
+title: "House Pricing & Type of Furnished Predictive Model"
+author: 'Payal Parida'
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    df_print: paged
+version: 1
+---
+
+# 0. Instructions
+
+```{r}
+# install.packages("validate")
+# install.packages("ggplot2")
+# install.packages("tidyverse")
+# install.packages("devtools")
+library(validate)
+library(tidyverse)
+library("tidyr")
+library("dplyr")
+library(ggplot2)
+library(Hmisc)
+```
+
+# 1. Organise and clean the data
+
+## 1.1 Subset the data into the specific dataset allocated
+ 
+```{r}
+# Assign your student id into the variable SID, for example:
+SID <- 2244428                  # This is an example, replace 2101234 with your actual ID
+SIDoffset <- (SID %% 100) + 1    # Your SID mod 100 + 1
+
+load("house-analysis.RDa")
+# Now subset the housing data set
+# Pick every 100th observation starting from your offset
+# Put into your data frame named mydf (you can rename it)
+mydf <- house.analysis[seq(from=SIDoffset,to=nrow(house.analysis),by=100),]
+```
+
+```{r}
+housing_data<-mydf
+```
+We renamed the data set as `housing_data` as we're going to analyze on this one.
+
+## 1.2 Data quality analysis
+
+In data quality analysis process, we're going to eyeball the data set `housing_data` and check weather there is any missing value, any oddity, misleading data value in it.
+
+```{r}
+View(housing_data)
+```
+- We use `View()` to see the entire data frame.
+
+```{r}
+summary(housing_data)           
+```
+
+- From `summary` function, we checked the summary of all records of the data set.
+
+- Here we noticed some oddities like the minimum value for the variable `mq` is '0' that means the total square meters of the property is '0', which is inappropriate. Hence we will fix it as possible in upcoming steps.
+
+- We also found the negative value for `n_rooms` which is again inappropriate as the minimum number of rooms shouldn't be less than 1. We will analyse more about this in upcoming steps.
+
+- The variables `id`,`price`,`floor`,`n_bathrooms`,`has_terrace`,`has_alarm`,`heating`, `has_air_conditioning`,`has_parking` and `is_furnished` seem to be fine till now; but again we'll crosscheck shortly.
+
+```{r}
+str(housing_data)    
+```
+- We use `str()` to check the internal structure of the data frame to get the overall idea of the variables and data values of the data set.
+
+- In this data frame, the variable `heating` is character type, where all the other variables are of numeric type. 
+
+- But `has_terrace`,`has_alarm`,`has_air_conditioning`,`has_parking`,`is_furnished` have 2 types of data value which seems to be 2 different levels, so we can later convert these to factor as per the requirements.
+
+```{r}
+colSums(is.na(housing_data))
+```
+- We use `colSum(is.na())` to check the NA values according to the each variable of the data frame. And here we found no NA for any variable of the data frame.
+
+```{r}
+table(housing_data$heating)
+table(housing_data$has_terrace)
+table(housing_data$has_alarm)
+table(housing_data$has_air_conditioning)
+table(housing_data$has_parking)
+table(housing_data$is_furnished)
+```
+- We use `table()` to check the different levels of the categorical variable `heating` and we found there is spelling mistake in one data value for level `autonomous`.
+
+- As we mentioned earlier that some numerical variables seem to have 2 different levels, we checked and found no oddity in these variables except for 2 levels i.e `0` and `1`.
+
+
+> Now we are going to check overall errors of the data frame by setting specific rules to pass the quality check.
+
+```{r}
+housing_data.rules <- validator(okHeat = is.element(heating,c("autonomous","other")),
+                          okMQ = mq >= 37,
+                          okFloor = floor >= 1,
+                          okRooms = n_rooms >= 1,
+                          okBathroom = n_bathrooms >= 1)
+```
+
+- We use `validator()` and set some rules for additional validation on suspicious variables like `heating`,`floor`,`mq`,`n_rooms` and `n_bathrooms`, excluding other variables as they seem to be fine. 
+
+- We set the minimum value for `mq` as 37 (37 square meters of the property) based on research data and minimum value for `floor`,`rooms` and `bathrooms` as 1 based on basic requirements, lastly  for `heating`, the 2 levels as `autonomous`,`other`.
+
+```{r}
+qual.check <- confront(housing_data,housing_data.rules)
+summary(qual.check)
+```
+- From the above steps, we can check the errors occurred based on the rules.
+
+```{r}
+barplot(qual.check)
+```
+
+- Then we visualize the errors from the validation graphically using `barplot`.
+
+
+## 1.3 Data cleaning  
+ 
+- Finally we get to know from all the above checking that there are some errors found in the variables `mq`, `n_rooms` and `heating` of the data set `housing_data`.
+
+- There are 16 observations, where the error is occurred as the data values are less than 37 for the variable `mq`.
+
+- There is one negative value or less than 1 for `n_rooms`.
+
+- There is one value in the categorical variable `heating` that is misspelled as `autonamous` which is supposed to be `autonomous`.
+
+
+> Data Cleaning Process:
+
+- Now we're going to rectify all the above mentioned errors in below steps.
+
+```{r}
+housing_data$newn_rooms <- replace(housing_data$n_rooms, housing_data$n_rooms <= 0, median(housing_data$n_rooms, na.rm = TRUE))
+housing_data$new_mq <- replace(housing_data$mq, housing_data$mq <= 36, median(housing_data$mq, na.rm = TRUE))
+housing_data$new_heating <-cbind(ifelse(housing_data$heating=='autonamous','autonomous',housing_data$heating))
+```
+> EXPLANATION:
+
+- We've created the new variables for `n_rooms`, `mq` and `heating` as `newn_rooms`,`new_mq` and `new_heating` respectively, where we made the necessary changes to rectify the errors without hampering the real data set.
+
+- We've fixed the spelling mistake in the variable `new_heating`.
+
+- We've changed the unfitting values in variables `new_mq` and `newn_rooms` with the median of the variables respectively, because median is more robust than mean for imputing. 
+
+- These certain changes are made to avoid any issue throughout the detailed analysis and modelling.
+
+- Besides, we'll later transform the levels of `has_terrace`,`has_alarm`, `has_air_conditioning`, `has_parking`,`is_furnished` to factor during the analysis and modelling when it is required.
+
+
+# 2. Exploratory Data Analysis (EDA) 
+
+## 2.1 EDA plan
+
+Step 1: We'll check all the variables of the data set and extract the specific variables which are going to be used for analysis and modelling.
+
+Step 2: We'll crosscheck the numerical summery of the data set.
+
+Step 3: As R has read some variables in as numerical and character, so we'll fix by making these into Factor.
+
+Step 4: We'll visualize the data distribution for individual variables.
+
+Step 5: We'll visualize the relationship between the explanatory & dependent variable(s) graphically.
+
+
+## 2.2 EDA and summary of results  
+
+### Step 1: Variables of the Data Set
+
+```{r}
+names(housing_data)
+```
+
+- Here we have a complete look of all the variables of the data set. So now we can select the specific variables, on which we want to analyze and create models. As we've created the new rectified variables `newn_rooms`,`new_heating` and `new_mq`, we'll no more consider the variables `new_room`,`heating` and `mq` for any detailed analysis.
+
+- As the variable `id` seems to be an identifier and we don't feel it's so useful for the analysis, we won't use this variable as well but however we'll also not discard it from the data set for now.
+
+### Step 2: Numeric Summary
+
+```{r}
+summary(housing_data)
+```
+The numerical summaries seem to have no such issues for specific variables after rectification.
+
+### Step 3: Data Type Conversion
+
+```{r}
+housing_data$has_terrace <- as.factor(housing_data$has_terrace)
+housing_data$has_alarm <- as.factor(housing_data$has_alarm)
+housing_data$has_air_conditioning <- as.factor(housing_data$has_air_conditioning)
+housing_data$has_parking <- as.factor(housing_data$has_parking)
+housing_data$is_furnished <- as.factor(housing_data$is_furnished)
+housing_data$new_heating <- as.factor(housing_data$new_heating)
+
+table(housing_data$has_terrace)
+table(housing_data$has_alarm)
+table(housing_data$has_air_conditioning)
+table(housing_data$has_parking)
+table(housing_data$is_furnished)
+table(housing_data$new_heating)
+```
+We use `as.factor` function because we want the specified variables having 2 values to be treated as a category.
+
+```{r}
+str(housing_data)
+```
+Now we're confirmed that the `has_terrace`,`has_alarm`,`has_air_conditioning`,`has_parking`,`is_furnished` and `new_heating` have been converted to factors.
+
+### Step 4: Graphical Exploration of The Data Distribution
+
+> Lets look at the distribution of each numeric variable by Histogram.
+
+```{r}
+ggplot(data=housing_data, aes(x=price)) + geom_histogram(bins = 30,fill="#3E8797") + ggtitle("Histogram of Price") + xlab("Price of House")
+ggplot(data=housing_data, aes(x=new_mq)) + geom_histogram(bins = 30,fill="#3E8797") + ggtitle("Histogram of Square meter of the House") + xlab("New_MQ")
+ggplot(data=housing_data, aes(x=floor)) + geom_histogram(bins=10,fill="#3E8797") + ggtitle("Histogram of Number of Floor") + xlab("Floor")
+ggplot(data=housing_data, aes(x=newn_rooms)) + geom_histogram(bins = 30,fill="#3E8797") + ggtitle("Histogram of Number of Rooms") + xlab("Number of Rooms")
+ggplot(data=housing_data, aes(x=n_bathrooms)) + geom_histogram(bins = 30,fill="#3E8797") + ggtitle("Histogram of Number of Bathrooms") + xlab("Number of Bathrooms")
+
+```
+
+We used `Histogram` to see how each of the numeric variable of the data set is distributed as `Histogram` is a good way to check the data distribution.
+
+### Step 5: Graphical Exploration of The Data Relationship
+
+> Lets explore the relationship between the numeric variables by Scatter plot.
+
+```{r}
+
+ggplot(data = housing_data, aes(x=new_mq, y=price)) + geom_point() + theme_classic() + ggtitle("Square Meter vs Price")
+ggplot(data = housing_data,aes(x=floor, y=price)) + geom_point() + theme_classic() + ggtitle("Floor vs Price")
+ggplot(data = housing_data,aes(x=newn_rooms, y=price)) + geom_point() + theme_classic() + ggtitle("Rooms vs Price")
+ggplot(data = housing_data,aes(x=n_bathrooms, y=price)) + geom_point() + theme_classic() + ggtitle("Bathroom vs Price")
+
+```
+
+Here we used `scatter plot` to visualize the relationship between the contineous variables and linearity of them.
+
+> Lets explore the relationship between categorical variables & numeric variable.
+
+```{r}
+ggplot(data = housing_data, aes(x=has_terrace, y=price)) +geom_boxplot() + theme_classic()+ggtitle("Box Plot of Terrace by Price")
+ggplot(data = housing_data, aes(x=has_alarm, y=price)) +geom_boxplot() + theme_classic()+ggtitle("Box Plot of Alarm by Price")
+ggplot(data = housing_data, aes(x=has_air_conditioning, y=price)) +geom_boxplot() + theme_classic()+ggtitle("Box Plot of Air Conditioning by Price")
+ggplot(data = housing_data, aes(x=has_parking, y=price)) +geom_boxplot() + theme_classic()+ggtitle("Box Plot of Parking by Price")
+ggplot(data = housing_data, aes(x=is_furnished, y=price)) +geom_boxplot() + theme_classic()+ggtitle("Box Plot of Furnished by Price")
+ggplot(data = housing_data, aes(x=new_heating, y=price)) +geom_boxplot() + theme_classic()+ggtitle("Box Plot of Heating by Price")
+
+```
+
+Here we used the `box plot` to see the median difference of price according to different categorical variables of th data set.
+
+## 2.3 Additional insights and issues
+
+While plotting the graphical representation of the data, we found some issues which we want to highlight below.
+
+- From the set of histogram plots, we found that `price`,`new_mq`,`floor` and `n_bathroom` seem skewed to the right, however, `newn_rooms` seems to be fine as it looks like normally distributed. Hence we can use transformation for the variables which are skewed in the model as per requirements.
+
+- From the collection of the scatter plots, we couldn't see that any of the variables is clearly linear; but some show a linear trend which we'll confirm later in forthcoming deep analysis.
+
+- From the set of the box plots, we found that there are visible median difference in price for categorical variable `has_alarm`, `has_parking`, and extremely minimal difference for `has_terrace`,`has_air_conditioning`,`is_furnished`. However we couldn't see such difference for categorical variable `new_heating`. But again we will confirm the effectiveness while building the regression model.
+
+# 3. Modelling
+
+## 3.1 Explain your analysis plan
+
+Step 1: We'll crosscheck and confirm the relationship between the response variable & explanatory variable and inter dependency in between the continuous explanatory variables.
+
+Step 2: We'll check the visualize the continuous variables to check that weather these variables are correlated to each other or not.
+
+Step 3: As we've already noticed from the above box plots, that there is no visible mean difference for some categorical variables, we'll check manually the mean difference for `price` according to these variables.
+
+Step 4: We'll create the maximal model using continuous variable `price` as response and all the variables mix of continuous & categorical as explanatory variables. So we'll use ANCOVA to build the model.
+
+Step 5: We'll eyeball the maximal model and if we find any issues, we'll try to build a more adequate model based on it.
+
+### Step 1 & Step 2: Correlation Check And Visualization
+```{r}
+names(housing_data)
+```
+
+
+```{r}
+housing_data_numericset <- subset(housing_data, select=c("price", "new_mq", "floor", "newn_rooms","n_bathrooms"))
+pairs(housing_data_numericset,panel = panel.smooth)
+```
+- We've created a new data frame `housing_data_numericset` having only continuous variables, and used `pairs` function to plot scatter plots for each variable-combination of a data frame.
+
+- The response variable `price` is shown on the y-axis of the top row of these panels. There appears to be a positive relationship with `new_mq` and `n_bathrooms`. 
+
+- But there is no such visible negative relationship with any explanatory variables. 
+
+```{r}
+cor(housing_data_numericset)
+```
+
+- We've used `cor` function to check that if the response variable `price` and all continuous explanatory variables are related or not. We took all the continuous variables simultaneously to check the multi collinearity.
+
+- Here we've noticed that the response variable `price` is slightly correlated with `new_mq`,`newn_rooms` & `n_bathrooms`; but it's not that correlated with `floor`. Hence we're not going to use `floor` for creating the model, rather considering the other continuous explanatory variables.
+
+- We've also noticed that the explanatory variables seem not to be any obvious multi collinearity or there is no inter dependency in between them.
+
+### Step 3: Check the mean difference in terms of each categorical variable.
+
+```{r}
+aggregate(housing_data$price~housing_data$has_terrace, FUN="mean")
+aggregate(housing_data$price~housing_data$has_alarm, FUN="mean")
+aggregate(housing_data$price~housing_data$has_air_conditioning, FUN="mean")
+aggregate(housing_data$price~housing_data$has_parking, FUN="mean")
+aggregate(housing_data$price~housing_data$is_furnished, FUN="mean")
+aggregate(housing_data$price~housing_data$new_heating, FUN="mean")
+```
+By looking at the mean for each group of the categorical variables, we found that there is visible mean difference between each categorical variables' levels. Hence we'll consider all the categorical variables for the model to check the effectiveness.
+
+
+## 3.2 Build a model for property price
+
+### Step 4:Buliding a maximal model:
+
+```{r}
+housing_model.1 <- lm(housing_data$price ~ housing_data$new_mq+ housing_data$n_bathrooms+ housing_data$newn_rooms + housing_data$has_alarm + housing_data$has_parking + housing_data$new_heating + housing_data$is_furnished + housing_data$has_terrace + housing_data$has_air_conditioning)
+
+summary(housing_model.1)
+```
+
+- We've created a maximal model named as `housing_model.1` taking all the categorical variables and continuous variables except for `floor` as we have mentioned the reason earlier.
+
+- We found some noticeable issues which we'll be discussing in next section with detailed analysis.
+
+```{r}
+plot(housing_model.1)
+```
+The diagnostic plot of `housing_model.1`.
+
+### Step 5: Building another model.
+
+> Lets now try to build another model which might be more adequate.
+
+```{r}
+housing_model.2 <- lm(housing_data$price ~ housing_data$new_mq + housing_data$n_bathrooms + housing_data$has_alarm + housing_data$new_heating + housing_data$has_air_conditioning)
+                      
+summary(housing_model.2)
+```
+
+- We've created another model named as `housing_model.2` by eliminating specific explanatory variables from the previous model which caused some issues.
+
+```{r}
+plot(housing_model.2)
+```
+
+The diagnostic plot of `housing_model.2`.
+
+## 3.3 Critique model using relevant diagnostics
+
+> Model 'housing_model.1' Explanation:
+
+- In the model `housing_model.1`, we've noticed that the variables `newn_rooms`,`has_parking1`,`is_furnished1` and `has_terrace1` are not significant that means the P-value is greater than `0.05` as the P-values should be less than `0.05` for significance.
+
+- The `Adjusted R-squared` value is 0.212 that means 21% of dependent variable `price` that is explained by the specified explanatory variables of the data set in this regression model.
+
+- The F statistic is significant as the P-value is too less than `0.05`. 
+
+- From the diagnostic plot, we see that the spread of the residuals signifies heteroscedasticity in residuals vs fitted plot. The QQ plot is not also fitted as there are many point of quantiles lies away from the straight line.
+
+> Model 'housing_model.2' Explanation:
+
+- In this model `housing_model.2`, we checked that the coefficients are significant for all the taken variables that means the P-value is less than `0.05`.
+
+- Again the F statistic is significant as the P-value is too less than `0.05` and has been increased than the previous maximal model. But there no such changes in Adjusted R square value.
+
+- In this diagnostic plot, again the spread of the residuals signifies heteroscedasticity in residuals vs fitted plot and the QQ plot is not also improved.
+
+- So model `housing_model.2` might be slightly improved than model `housing_model.1` based on coefficient significance and increased in F statistic; but this is not a better model to consider.
+
+Hence we'll try to built an improved model in next step.
+
+## 3.4 Suggest improvements to your model
+
+```{r}
+housing_model.3 <- lm(log(housing_data$price) ~ log(housing_data$new_mq) + log(housing_data$n_bathrooms) + housing_data$has_alarm + housing_data$new_heating + housing_data$has_air_conditioning)
+
+summary(housing_model.3)
+```
+
+We created a new model named as `housing_model.3` where we've made `log` transformation as previously in the EDA section, we noticed that the continuous variables `price`,`new_mq` & `n_bathrooms` are not normally distributed.
+
+```{r}
+plot(housing_model.3)
+```
+
+The diagnostic plot of `housing_model.3`.
+
+> Model 'housing_model.3' Explanation:
+
+- In this model, we checked that the all the mentioned variables are significant that means the P-value is less than `0.05` for all coefficient.
+
+- The F statistic is significant as the P-value is too less than `0.05`. The Adjusted R square value remains the same or not changed apparently.
+
+- By the use of transformation, all the residual diagnostic plots are looking better as the residuals vs fitted plot not pointing to major violations. The QQ plot also looks aligned except for few points standing out as outliers; but this also doesn't concern any major issue.
+
+- So from all the above experiments, we have ended with the below minimal adequate model:
+
+log(housing_data$price) ~ log(housing_data$new_mq) + log(housing_data$n_bathrooms) + housing_data$has_alarm + housing_data$new_heating + housing_data$has_air_conditioning
+
+# 4. Extension work
+
+```{r}
+names(housing_data)
+```
+
+## 4.1 Model the likelihood of a property being furnished (using the is_furnished variable provided).
+
+- We're going to build a model for `is_furnished`, so we are considering `is_furnished` as response variable.
+ 
+- Here `is_furnished` is a categorical variable having 2 values `0 & 1` which is binary, and all the rest explanatory variables are mix of continuous & categorical variables, hence we'll be using `Logistic Regression` for a suitable model. 
+
+- From the Data Cleaning section, we have already rectified the necessary errors which will no more affect the process.
+
+- From the above EDA section, we've checked the data and already done the necessary steps like changing all the categorical variables `has_terrace`,`has_alarm`,`has_air_conditioning`,`has_parking`,`is_furnished` and `new_heating` to factor.
+
+- From the above set of plots of histograms, we saw that except for `newn_rooms`, all rest variables are not normally distributed; but we will not require normal distributions in the data as we're going to use logistic regression.
+
+- We have previously used `cor` function for all the continuous variables of the data set to check the multi collinearity and there was no such strong correlation in between the variables, so we'll be considering all the explanatory continuous variables in the model.
+
+- We'll start by building the maximal model and use the `step` function to simplify and get the adequate model.
+
+### Lets begin with this maximal model with all the variables of the data set.
+
+```{r}
+housing_maximum <- glm(housing_data$is_furnished ~ housing_data$price + housing_data$new_mq + housing_data$newn_rooms + housing_data$n_bathrooms + housing_data$floor + housing_data$has_air_conditioning + housing_data$has_alarm + housing_data$has_parking + housing_data$has_terrace + housing_data$new_heating, family=binomial)
+
+step(housing_maximum)
+```
+
+The suggested model is:
+
+```{r}
+housing_final.model <- glm(formula = housing_data$is_furnished ~ housing_data$has_air_conditioning, 
+    family = binomial)
+
+summary(housing_final.model)
+```
+### Results interpretation
+
+We found that the final suitable model has only one significant coefficient for `has_air_conditioning`, and from the coefficient estimates we see that having air conditioning has more chances of being furnished.
+
+### Odd ratios and Odds
+
+```{r}
+exp(coef(housing_final.model))
+```
+```{r}
+table(housing_data$has_air_conditioning)
+```
+
+
+- The odds ratio shows us that what change in response variable has according to the effect of explanatory variable(s).
+
+- From the above adequate model, as the only explanatory variable is categorical which has maximum effect on response variable `is_furnished`, the odds ratio compares the odds of the event occurring at 2 different levels of the explanatory variable `has_air_conditioning`. 
+
+- We noticed that the odds ratio is greater than 1 indicates that the event is more likely at level 1 of has_air_conditioning. 
+
+NOTE: The diagnostic plots are not applicable to logistic regression as the assumptions that we were checking for in linear models are not relevant.
+  
+# References  
+
+Minimum Space Standards for New Homes (37 Square meter) : https://urbanistarchitecture.co.uk/minimum-space-standards/
+
+Color Code : https://htmlcolorcodes.com
